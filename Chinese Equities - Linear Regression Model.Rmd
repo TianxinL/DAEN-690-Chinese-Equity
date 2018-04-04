@@ -1,0 +1,283 @@
+---
+title: 'Chinese Equities: Linear Regression Model'
+author: "Nuria McGrath"
+date: "April 2, 2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Libraries
+```{r}
+library(MASS)
+library(ISLR)
+library(lattice)
+library(hexbin)
+library(ggplot2)
+source("hw.r")
+library(car)   # vif() and qqPlot functions
+library(splines)
+library(corrplot)
+library(coefplot)
+library(boot)
+hw <- theme_gray()+ theme(
+  plot.title=element_text(hjust=0.5),
+  plot.subtitle=element_text(hjust=0.5),
+  plot.caption=element_text(hjust=-.5),
+
+#  strip.text.y = element_blank(),
+  strip.background=element_rect(fill=rgb(.9,.95,1),
+    colour=gray(.5), size=.2),
+
+  panel.border=element_rect(fill=FALSE,colour=gray(.70)),
+  panel.grid.minor.y = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  panel.spacing.x = unit(0.10,"cm"),
+  panel.spacing.y = unit(0.05,"cm"),
+
+# axis.ticks.y= element_blank()
+  axis.ticks=element_blank(),
+  axis.text=element_text(colour="black"),
+  axis.text.y=element_text(margin=margin(0,3,0,3)),
+  axis.text.x=element_text(margin=margin(-1,0,3,0))
+)
+```
+##Read in Data
+```{r}
+trainingdate <- read.csv("~/DAEN 690/Final Dataset/training1.csv")
+testingdate <- read.csv("~/DAEN 690/Final Dataset/testing1.csv")
+trainingrandom <- read.csv("~/DAEN 690/Final Dataset/training2.csv")
+testingrandom <- read.csv("~/DAEN 690/Final Dataset/testing2.csv")
+crossvalidation <- read.csv("~/DAEN 690/Final Dataset/crossvalidation.csv")
+```
+#Rearrange columns: Predictor First
+```{r}
+trainingdate <- trainingdate[,c(29,1:28,30)]
+testingdate <- testingdate[,c(29,1:28,30)]
+trainingrandom <- trainingrandom[,c(29,1:28,30)]
+testingrandom <- testingrandom[,c(29,1:28,30)]
+crossvalidation <- crossvalidation[,c(29,1:28,30)]
+```
+
+##Explore Data:Scatterplot Matrix
+##I use the crossvalidation dataset because this is the full dataset and will be parsed later. 
+##Could not locate any significant correlations between FTSE and predictor variables so I will keep all to see if combinations are significant. 
+
+```{r}
+fulldataset1<-crossvalidation[,c(1:16)]
+fulldataset2<-crossvalidation[,c(1,17:30)]
+onDiag <- function(x, ...){
+     yrng <- current.panel.limits()$ylim
+     d <- density(x, na.rm=TRUE)
+     d$y <- with(d, yrng[1] + 0.95 * diff(yrng) * y / max(y) )
+     panel.lines(d,col=rgb(.83,.66,1),lwd=2)
+     diag.panel.splom(x, ...)
+}
+
+
+offDiag <- function(x,y,...){
+   panel.grid(h=-1,v=-1,...)
+   panel.hexbinplot(x,y,xbins=15,...,border=gray(.7),
+     trans=function(x)x^.5)
+#    panel.loess(x , y, ..., lwd=2,col='red')
+}
+
+splom(fulldataset1,as.matrix=TRUE,
+  xlab='',main="Chinese Equities: First 15 Variables",
+  pscale=0, varname.cex=0.8,axis.text.cex=0.6,
+  axis.text.col="purple",axis.text.font=2,
+  axis.line.tck=.5,
+  panel=offDiag,
+  diag.panel = onDiag
+)
+splom(fulldataset2,as.matrix=TRUE,
+  xlab='',main="Chinese Equities: Second 14 Variables",
+  pscale=0, varname.cex=0.8,axis.text.cex=0.6,
+  axis.text.col="purple",axis.text.font=2,
+  axis.line.tck=.5,
+  panel=offDiag,
+  diag.panel = onDiag
+)
+```
+## Principal Component Analysis
+##Take out dependent variable
+```{r}
+prin_comp <-crossvalidation[,-c(1)]
+prin_comp <-prcomp(na.omit(crossvalidation), scale=TRUE)
+names(prin_comp)
+
+biplot(prin_comp,scale=0)
+```
+##Proportion of variance explained
+```{r}
+std_dev <- prin_comp$sdev
+pr_var <- std_dev^2
+pr_var [1:14]
+```
+##Proportion of Variance Explained
+```{r}
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:29]
+```
+##Scree Plot:  A scree plot is used to access components or factors which explains the most of variability in the data. It represents values in descending order. 
+```{r}
+plot(prop_varex, xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b", main  = "Scree Plot")
+
+```
+##Cumulative Scree Plot: Shows that twenty components results in a variance close to 99%. We should use twenty variables in our model.
+```{r}
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b", main = "Cumulative Scree Plot")
+```
+
+## Run Regression 4 year/ 1 year and plot coefficients
+
+```{r}
+
+full <- lm(ftse~. , data=trainingdate)
+summary(full)
+coefplot(full)
+
+```
+##Get significant predictors
+```{r}
+pvals = coef(summary(full))[,4]
+sum(pvals<0.1)
+summ = summary(full)
+str(summ, max = 1)
+summ = summary(full)
+pvals = summ$coefficients[,4]
+mnames = names(pvals[pvals<0.009])
+mnames
+```
+##Create reduced model
+```{r}
+##original reduced reduced <- lm(ftse~cpi.residence+cpi.transportation+cpi.education+sse+exchange.rate+bond.ytm+china.prime+china.tertairy, data = trainingdate)
+reduced <- lm(ftse~import+m0+manu.ci+manu.ex+building.sale.rate+cpi.residence+cpi.transportation+cpi.household+cpi.education+sse+exchange.rate+bond.ytm+china.gdp+china.prime+china.second+china.tertairy, data = trainingdate)
+summary(reduced)
+coefplot(reduced)
+```
+##Create backward step model
+```{r}
+backwards = step(full,trace=0)
+summary(backwards)
+coefplot(backwards)
+```
+
+
+##Plot fitted values against residuals
+```{r}
+head(fortify(full))
+head(fortify(reduced))
+head(fortify(backwards))
+
+full1 <- ggplot(aes(x=.fitted, y = .resid), data = full)+geom_point()+geom_hline(yintercept=0)+geom_smooth(se = FALSE)+labs(x="Fitted Values",y="Residuals")+hw
+
+reduced1 <- ggplot(aes(x=.fitted, y = .resid), data = reduced)+geom_point()+geom_hline(yintercept=0)+geom_smooth(se = FALSE)+labs(x="Fitted Values",y="Residuals")+hw
+
+backwards1 <- ggplot(aes(x=.fitted, y = .resid), data = backwards)+geom_point()+geom_hline(yintercept=0)+geom_smooth(se = FALSE)+labs(x="Fitted Values",y="Residuals")+hw
+
+full1
+reduced1
+backwards1
+
+
+```
+##QQ Plot
+```{r}
+qqfull <-ggplot(full, aes(sample=.stdresid))+stat_qq()+geom_abline()+hw
+qqreduced <-ggplot(reduced, aes(sample=.stdresid))+stat_qq()+geom_abline()+hw
+qqbackwards <-ggplot(backwards, aes(sample=.stdresid))+stat_qq()+geom_abline()+hw
+qqfull
+qqreduced
+qqbackwards
+```
+##Histogram of residuals
+```{r}
+histfull<- ggplot(full, aes(x=.resid))+geom_histogram()+hw
+histreduced<- ggplot(reduced, aes(x=.resid))+geom_histogram()+hw
+histbackwards<- ggplot(backwards, aes(x=.resid))+geom_histogram()+hw
+histfull
+histreduced
+histbackwards
+```
+## RSS and AIC of models
+```{r}
+anova(full,reduced,backwards)
+AIC(full, reduced, backwards)
+```
+
+
+##Predict 4/1 split
+```{r}
+testingdate1 <-testingdate[,c("ftse","import","m0","manu.ci","manu.ex","building.sale.rate","cpi.residence","cpi.transportation","cpi.household","cpi.education","sse","exchange.rate","bond.ytm","china.gdp","china.prime","china.second","china.tertairy")]
+predict.1 <- predict(reduced, newdata=testingdate1, se.fit=TRUE,interval="prediction", level=.95)
+head(predict.1$fit)
+head(predict.1$se.fit)
+```
+##Now test random sample
+##Run regression for full model and plot coefficients
+
+```{r}
+fullrandom <- lm(ftse~. , data=trainingrandom)
+summary(fullrandom)
+coefplot(fullrandom)
+```
+
+##Get significant predictors
+```{r}
+pvals = coef(summary(fullrandom))[,4]
+sum(pvals<0.1)
+summ = summary(fullrandom)
+str(summ, max = 1)
+summ = summary(fullrandom)
+pvals = summ$coefficients[,4]
+mnames = names(pvals[pvals<0.001])
+mnames
+```
+##Create reduced model for random split. First thing to note, there aren't as many significant variables and the significant variables are different from the 4/1 split model. Since we are testing our initial model, I will use the same predictors as before and see how they bahave. The new significant variables at the .001 level (not .0001 as in 4/1 split model) are:"survey.oecd","pmi.manu"    ,"m0","sse","exchange.rate","bond.ytm","china.tertairy"
+```{r}
+reducedrandom <- lm(ftse~import+m0+manu.ci+manu.ex+building.sale.rate+cpi.residence+cpi.transportation+cpi.household+cpi.education+sse+exchange.rate+bond.ytm+china.gdp+china.prime+china.second+china.tertairy, data = trainingrandom)
+summary(reducedrandom)
+coefplot(reducedrandom)
+qqreducedrandom <-ggplot(reducedrandom, aes(sample=.stdresid))+stat_qq()+geom_abline()+hw
+histreducedrandom<- ggplot(reducedrandom, aes(x=.resid))+geom_histogram()+hw
+AIC(reducedrandom)
+anova(reducedrandom)
+
+```
+##Test reduced model on new data
+```{r}
+testingrandom1 <-testingrandom[,c("ftse","import","m0","manu.ci","manu.ex","building.sale.rate","cpi.residence","cpi.transportation","cpi.household","cpi.education","sse","exchange.rate","bond.ytm","china.gdp","china.prime","china.second","china.tertairy")]
+predict.2 <- predict(reducedrandom, newdata=testingrandom1, se.fit=TRUE,interval="prediction", level=.95)
+head(predict.2$fit)
+head(predict.2$se.fit)
+```
+##Ten fold crossvalidation
+##Convert reduced model to glm
+```{r}
+reducedglm<-glm(ftse~import+m0+manu.ci+manu.ex+building.sale.rate+cpi.residence+cpi.transportation+cpi.household+cpi.education+sse+exchange.rate+bond.ytm+china.gdp+china.prime+china.second+china.tertairy, data = crossvalidation, family=gaussian(link="identity"))
+fullglm<- glm(ftse~. , data=crossvalidation)
+backwardsglm<- step(fullglm,trace=0)
+
+```
+##Perfom cross-validation with 10 folds
+```{r}
+fullcv<-cv.glm(crossvalidation, fullglm, K=10)
+reducedcv<-cv.glm(crossvalidation, reducedglm, K=10)
+backwardscv<-cv.glm(crossvalidation, backwardsglm, K=10)
+
+```
+##Build a data.frame with results
+```{r}
+cvResults <-as.data.frame(rbind(fullcv$delta,reducedcv$delta,backwardscv$delta))
+names(cvResults)<-c("Error","Adjusted Error")
+cvResults$Model<-c("Full","Reduced","Backwards")
+cvResults
+```
+
+
