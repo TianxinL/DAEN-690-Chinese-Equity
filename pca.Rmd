@@ -1,0 +1,55 @@
+---
+title: "PCA"
+author: "Liu, Tianxin"
+date: "April 13, 2018"
+output: html_document
+---
+
+```{r library, include=FALSE}
+library(devtools)
+install_github("ggbiplot", "vqv")
+library(ggbiplot)
+library(ggplot2)
+library(ggfortify)
+library(factoextra)
+```
+
+```{r data loading}
+normalized <- read.csv("C:\\Users\\Tianxin.Liu\\Dropbox\\DAEN690\\Data\\Data Combination\\final_dataset_normalized.csv")
+normalized <- normalized[,-34] # remove price
+normalizedClasses <- factor(normalized$Change)
+```
+
+```{r pca}
+norm.pca <- prcomp(normalized[,-34], scale=TRUE)
+fviz_eig(norm.pca)
+fviz_pca_var(norm.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+```{r print}
+summary(norm.pca)
+```
+
+
+```{r pairs}
+library("PerformanceAnalytics")
+chart.Correlation(normalized[,1:11], histogram=TRUE, pch=19)
+chart.Correlation(normalized[,12:22], histogram=TRUE, pch=19)
+chart.Correlation(normalized[,23:33], histogram=TRUE, pch=19)
+```
+```{r K-means}
+set.seed(2018)
+final <- read.csv("C:\\Users\\Tianxin.Liu\\Dropbox\\DAEN690\\Data\\Data Combination\\final_dataset.csv")
+plot(final$FTSE.Price,col=as.factor(final$Change),pch=19)
+class_factors <- final[,-c(1,35,36)]
+fit <- kmeans(class_factors, 2)
+final$cluster <- fit$cluster
+plot(final$FTSE.Price,col=as.factor(final$cluster),pch=19)
+
+```
+
+

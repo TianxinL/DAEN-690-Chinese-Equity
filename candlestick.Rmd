@@ -1,0 +1,74 @@
+---
+title: "Candlesticks"
+author: "Liu, Tianxin"
+date: "April 12, 2018"
+output: html_document
+---
+
+```{r library, include=FALSE}
+library(plotly)
+library(quantmod)
+library(dygraphs)
+```
+
+
+```{r load data}
+## Load data
+candlestick <- na.omit(read.csv("C:\\Users\\Tianxin.Liu\\Downloads\\FTSE China 50 Weekly.csv"))
+candlestick <- candlestick[,-6]
+colnames(candlestick) <- c("Date", "CANDLES.Close", "CANDLES.Open", "CANDLES.High", "CANDLES.Low", "Change") # quantmod requires these names
+candlestick$Date <- as.Date(candlestick$Date, format="%m/%d/%Y")
+```
+
+```{r create attributes}
+## create attributes
+candlestick$HO <- candlestick[,4]-candlestick[,3]
+candlestick$LO <- candlestick[,5]-candlestick[,3]
+candlestick$CO <- candlestick[,2]-candlestick[,3]
+```
+
+```{r candlestick chart}
+candles <- data.frame(candlestick$CANDLES.Open, candlestick$CANDLES.High,candlestick$CANDLES.Low, candlestick$CANDLES.Close)
+colnames(candles) <- c("Open","High","Low","Close")
+CANDLES <- as.xts(candles,order.by = candlestick[, 1])
+dygraph(CANDLES) %>% dyCandlestick()
+```
+
+```{r signal}
+# based on CO, real body
+candlestick$signal <- 0
+for (i in 1:260){
+  if(
+    (candlestick$CO[i+1]*candlestick$CO[i]>0) &
+    (candlestick$CO[i+1]<candlestick$CO[i])
+    ){candlestick$signal[i+1] = 0}
+  else if(
+    (candlestick$CO[i+1]*candlestick$CO[i]<0)&
+    (candlestick$CO[i+1]>candlestick$CO[i])
+    ){candlestick$signal[i+1] = 1}
+  else{candlestick$signal[i+1] = 0}
+}
+```
+
+```{r prop table}
+change <- c(candlestick$Change[-1],0)
+t <- apply(table(candlestick$Change, candlestick$signal),2, prop.table)*100
+colnames(t) <- c("signal 0", "signal 1")
+rownames(t) <- c("weekly change 0", "weekly change 1")
+t
+```
+
+```{r k-means cluster}
+# # K-Means Clustering with clusters based on HO, LO, CO
+class_factors <- candlestick[, 7:9] # using H/O, L/O, C/O
+set.seed(2018)
+fit <- kmeans(class_factors, 2)
+candlestick$cluster <- fit$cluster # vector of the cluster assigned to each candle
+```
+
+```{r prop table}
+t <- apply(table(candlestick$Change, candlestick$cluster),2, prop.table)*100
+colnames(t) <- c("cluster 0", "cluster 1")
+rownames(t) <- c("weekly change 0", "weekly change 1")
+t
+```

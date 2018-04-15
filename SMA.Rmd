@@ -1,0 +1,99 @@
+---
+title: "SMA"
+author: "Liu, Tianxin"
+date: "April 12, 2018"
+output: html_document
+---
+
+```{r library, include=FALSE}
+## Libraries
+library(quantmod)
+library(ggplot2)
+```
+
+```{r plot format, include=FALSE}
+## Format
+hw <- theme_gray()+ theme(
+  plot.title=element_text(hjust=0.5),
+  plot.subtitle=element_text(hjust=0.5),
+  plot.caption=element_text(hjust=-.5),
+  
+  #  strip.text.y = element_blank(),
+  strip.background=element_rect(fill=rgb(.9,.95,1),
+                                colour=gray(.5), size=.2),
+  
+  panel.border=element_rect(fill=FALSE,colour=gray(.70)),
+  panel.grid.minor.y = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  panel.spacing.x = unit(0.10,"cm"),
+  panel.spacing.y = unit(0.05,"cm"),
+  
+  # axis.ticks.y= element_blank()
+  axis.ticks=element_blank(),
+  axis.text=element_text(colour="black"),
+  axis.text.y=element_text(margin=margin(0,3,0,3)),
+  axis.text.x=element_text(margin=margin(-1,0,3,0))
+)
+```
+
+```{r load data}
+## Load data
+mydata <- read.csv("C:\\Users\\Tianxin.Liu\\Downloads\\FTSE China 50 Weekly.csv")
+mydata$Price <- as.numeric(as.character(mydata$Price))
+mydata$Date <- as.Date(mydata$Date,format = "%m/%d/%Y")
+```
+
+```{r recreate data}
+## Recreate data
+FTSE <- na.omit(data.frame(mydata$Date, mydata$Change, mydata$Price))
+colnames(FTSE) <- c("Date", "Change", "Price")
+str(FTSE)
+```
+
+```{r create SMA}
+## SMA
+# 10-day is 2-week
+# 20-day is 4-week
+# 30-day is 6-week
+# 200-day is 40-week
+FTSE$TENSMA <- FTSE$Price # keep original data if cannot calulate SMA
+FTSE$TENSMA[2:length(FTSE$Price)] <- SMA(FTSE$Price, n=2)[2:length(FTSE$Price)]
+FTSE$TWENTYSMA <- FTSE$Price # keep original data if cannot calulate SMA
+FTSE$TWENTYSMA[4:length(FTSE$Price)] <- SMA(FTSE$Price, n=4)[4:length(FTSE$Price)]
+FTSE$YEARLYSMA <- FTSE$Price # keep original data if cannot calulate SMA
+FTSE$YEARLYSMA[40:length(FTSE$Price)] <- SMA(FTSE$Price, n=40)[40:length(FTSE$Price)]
+str(FTSE)
+```
+
+```{r create signal}
+# Indicator Rules: 
+# - buy when weekly price > all SMA
+# - sell or hold when weekly price <= all SMA
+FTSE$signal <- NA
+for (i in 1:length(FTSE$Price)){
+  if((FTSE$Price[i] > FTSE$TENSMA[i]) & (FTSE$Price[i] > FTSE$TWENTYSMA[i]) & (FTSE$Price[i] > FTSE$YEARLYSMA[i])){
+    FTSE$signal[i] = 1
+  }else{FTSE$signal[i] = 0}
+}
+```
+
+```{r prob table}
+## Prob Table
+t <- apply(table(FTSE$Change,FTSE$signal),2,prop.table)*100
+colnames(t) <- c("signal 0", "signal 1")
+rownames(t) <- c("Weekly Change 0", "Weekly Change 1")
+t
+```
+
+```{r plot}
+## Visuals
+ggplot(data = subset(FTSE, !is.na(Price) &!is.na(TENSMA) & !is.na(TWENTYSMA)&!is.na(YEARLYSMA)), aes(Date)) + 
+  geom_line(aes(y = Price, colour = "Close")) + 
+  geom_line(aes(y = TENSMA, colour = "10 SMA")) +
+  geom_line(aes(y = TWENTYSMA, colour = "20 SMA")) +
+  geom_line(aes(y = YEARLYSMA, colour = "200 SMA")) +
+  labs(x="Year", y="Simple Moving Averages",title="Simple Moving Averages and FTSE Close Price")+ hw+theme(
+    panel.background = element_rect(fill = NA),
+    panel.grid.major = element_line(colour = "grey"),
+    panel.ontop = TRUE)
+```
