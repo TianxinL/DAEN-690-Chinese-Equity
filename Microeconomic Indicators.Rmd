@@ -1,0 +1,166 @@
+---
+title: "Microeconomic Indicators"
+author: "Nuria McGrath"
+date: "April 11, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+
+
+```{r}
+library(MASS)
+library(ISLR)
+library(lattice)
+library(hexbin)
+library(ggplot2)
+
+library(car)   # vif() and qqPlot functions
+library(splines)
+library(corrplot)
+library(coefplot)
+library(boot)
+library(tidyverse)
+library(broom)
+library(glmnet)
+library(quantmod)
+library(PerformanceAnalytics)
+library(TTR)
+library(fpc) 
+library(cluster)
+hw <- theme_gray()+ theme(
+  plot.title=element_text(hjust=0.5),
+  plot.subtitle=element_text(hjust=0.5),
+  plot.caption=element_text(hjust=-.5),
+
+#  strip.text.y = element_blank(),
+  strip.background=element_rect(fill=rgb(.9,.95,1),
+    colour=gray(.5), size=.2),
+
+  panel.border=element_rect(fill=FALSE,colour=gray(.70)),
+  panel.grid.minor.y = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  panel.spacing.x = unit(0.10,"cm"),
+  panel.spacing.y = unit(0.05,"cm"),
+
+# axis.ticks.y= element_blank()
+  axis.ticks=element_blank(),
+  axis.text=element_text(colour="black"),
+  axis.text.y=element_text(margin=margin(0,3,0,3)),
+  axis.text.x=element_text(margin=margin(-1,0,3,0))
+)
+```
+
+## Read in data
+
+```{r}
+FTSE <- read.csv("~/DAEN 690/FTSE China 50 index.csv")
+FTSE$Price <- as.numeric(as.character(FTSE$Price))
+FTSE$Date <- as.Date(FTSE$Date,format = "%m/%d/%Y")
+NAs <- FTSE[!complete.cases(FTSE),]
+NAs
+```
+
+## Create simple moving averages and 0,1 values for crosses
+```{r}
+FTSE$TENSMA <- SMA(FTSE$Price, n=10)
+FTSE$TWENTYSMA <- SMA(FTSE$Price, n=20)
+FTSE$THIRTYSMA <- SMA(FTSE$Price, n=30)
+FTSE$YEARLYSMA <- SMA(FTSE$Price, n=200)
+# Indicator Rules: 10,100 Crossover
+# - buy when 10-day moving average > 100-day moving average
+# - sell and move to cash when 10-day moving average < 100-day moving average
+SMA10<-SMA(FTSE$Price,n=10)
+SMA20<-SMA(FTSE$Price,n=20)
+FTSE$position10_20 <- ifelse(SMA20 >= SMA10[20:length(SMA10)],0,1)# 0 sell, 1 buy or hold # 0 sell, 1 buy or hold
+# Indicator Rules: 200-Day Moving Average
+# - buy when daily price is > 200-day moving average
+# - sell and move to cash when daily price < 200-day moving average
+SMA200<-SMA(FTSE$Price,n=200)
+FTSE$position200 <- ifelse(SMA200 >= FTSE$Price[200:length(FTSE$Price)],0,1)  # 0 sell, 1 buy or hold
+FTSE <- na.omit(FTSE)
+FTSE <- FTSE[,-6]
+```
+## Create Visuals
+```{r}
+ggplot(data = subset(FTSE, !is.na(Price) &!is.na(TENSMA) & !is.na(TWENTYSMA)&!is.na(YEARLYSMA)), aes(Date)) + 
+  geom_line(aes(y = Price, colour = "Close")) + 
+  geom_line(aes(y = TENSMA, colour = "10 SMA")) +
+  geom_line(aes(y = TWENTYSMA, colour = "20 SMA")) +
+   geom_line(aes(y = YEARLYSMA, colour = "200 SMA")) +
+  labs(x="Year", y="Simple Moving Averages",title="Simple Moving Averages and FTSE Close Price")+ hw+theme(
+  panel.background = element_rect(fill = NA),
+  panel.grid.major = element_line(colour = "grey"),
+  panel.ontop = TRUE)
+
+ggplot(data = subset(FTSE, !is.na(Price) &!is.na(TENSMA) & !is.na(TWENTYSMA)&!is.na(YEARLYSMA)), aes(Date)) + 
+  geom_line(aes(y = TENSMA, colour = "10 SMA")) +
+  geom_line(aes(y = TWENTYSMA, colour = "20 SMA")) +
+  labs(x="Year", y="Simple Moving Averages",title="Ten and Twenty Day Moving Averages")+ hw+theme(
+  panel.background = element_rect(fill = NA),
+  panel.grid.major = element_line(colour = "grey"),
+  panel.ontop = TRUE)
+
+ggplot(data = subset(FTSE, !is.na(Price) &!is.na(TENSMA) & !is.na(TWENTYSMA)&!is.na(YEARLYSMA)), aes(Date)) + 
+  geom_line(aes(y = Price, colour = "Daily FTSE")) +
+  geom_line(aes(y = YEARLYSMA, colour = "200 SMA")) +
+  labs(x="Year", y="Simple Moving Averages",title="Daily Close and 200 Day Moving Averages")+ hw+theme(
+  panel.background = element_rect(fill = NA),
+  panel.grid.major = element_line(colour = "grey"),
+  panel.ontop = TRUE)
+```
+
+
+
+## Create candlesticks
+
+```{r}
+
+CANDLES <- read.csv("~/DAEN 690/FTSE China 50 index.csv")
+
+CANDLES <- CANDLES[,-6]
+colnames(CANDLES) <- c("Date", "CANDLES.Close", "CANDLES.Open", "CANDLES.High", "CANDLES.Low") # quantmod requires these names
+CANDLES$Date <- as.POSIXct(CANDLES$Date, format = "%m/%d/%Y")
+CANDLES <- as.xts(CANDLES[, -1], order.by = CANDLES[, 1])
+CANDLES <- CANDLES[1:nrow(CANDLES)-1, 1:4]
+ 
+chart_Series(CANDLES)
+```
+
+
+```{r}
+CANDLES$HO <- CANDLES[,3]-CANDLES[,2]
+CANDLES$LO <- CANDLES[,4]-CANDLES[,2]
+CANDLES$CO <- CANDLES[,1]-CANDLES[,2]
+```
+
+## K Means Clustering
+```{r}
+# # K-Means Clustering with clusters based on HO, LO, CO
+class_factors <- CANDLES[, 5:7] # using H/O, L/O, C/O
+ 
+set.seed(123)
+fit <- kmeans(class_factors, 4)
+m <- fit$cluster # vector of the cluster assigned to each candle
+
+```
+
+## K Means Visualizations: which candles were classifed into each cluster?
+```{r}
+
+cluster <- as.xts(m)
+index(cluster) <- index(CANDLES) # coerce index of cluster series to match data's index
+new_data <- merge.xts(CANDLES, cluster)
+chartSeries(xts(coredata(new_data)[order(new_data$cluster),],type="candlesticks", order.by = index(new_data)))
+
+
+```
+```{r}
+apply(table(new_data$cluster, lag(new_data$cluster)),2, prop.table)*100 
+```
+
